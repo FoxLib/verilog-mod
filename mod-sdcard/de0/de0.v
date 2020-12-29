@@ -91,6 +91,27 @@ de0pll u0(
     .m100  (clock_100),
     .m106  (clock_106),
 );
+
+// -----------------------------------------------------------------------
+wire [7:0] errorno;
+reg [15:0] pwm_led;
+wire       pwm_en = 1024 < pwm_duty;
+assign LEDR[7:0] = pwm_en ? errorno : 0;
+always @(posedge clock_50) pwm_led <= pwm_led + 1;
 // -----------------------------------------------------------------------
 
+sdcard u1(
+
+    .clock      (clock_25 & locked),
+    .spi_miso   (SD_DATA[0]),       // Входящие данные
+    .spi_mosi   (SD_CMD),           // Исходящие
+    .spi_sclk   (SD_CLK),           // Тактовая частота
+    .spi_cs     (SD_DATA[3]),       // Выбор чипа
+
+    // Отладка
+    .errorno    (errorno)
+)
+
 endmodule
+
+`include "../sdcard.v"

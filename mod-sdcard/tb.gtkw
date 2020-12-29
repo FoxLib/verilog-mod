@@ -1,23 +1,23 @@
 [*]
 [*] GTKWave Analyzer v3.3.86 (w)1999-2017 BSI
-[*] Tue Dec 29 07:25:37 2020
+[*] Tue Dec 29 15:42:02 2020
 [*]
 [dumpfile] "/disk/fox/dev/mods/mod-sdcard/tb.vcd"
-[dumpfile_mtime] "Tue Dec 29 07:24:54 2020"
-[dumpfile_size] 68618
+[dumpfile_mtime] "Tue Dec 29 15:41:33 2020"
+[dumpfile_size] 54452
 [savefile] "/disk/fox/dev/mods/mod-sdcard/tb.gtkw"
-[timestart] 0
+[timestart] 2605
 [size] 1920 1029
 [pos] -1 -1
-*-6.000000 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+*-6.000000 2825 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
 [treeopen] tb.
 [sst_width] 248
-[signals_width] 172
+[signals_width] 242
 [sst_expanded] 1
 [sst_vpaned_height] 300
 @28
+[color] 3
 tb.clock
-tb.clock_50
 @800200
 -PHY
 @28
@@ -31,14 +31,56 @@ tb.SD.spi_mosi
 tb.SD.spi_sclk
 @1000200
 -PHY
-@29
-tb.SD.busy
+@800200
+-STATE
 @28
-tb.SD.clock
-tb.SD.command
+[color] 5
+tb.SD.n[2:0]
+@23
+[color] 5
+tb.SD.fn[3:0]
 @22
+[color] 5
+tb.SD.fn2[3:0]
+@28
+[color] 5
+tb.SD.k[2:0]
+@22
+[color] 5
+tb.SD.t[3:0]
+@28
+[color] 5
+tb.SD.m[2:0]
+[color] 5
+tb.SD.i[2:0]
+@22
+[color] 5
 tb.SD.counter[7:0]
+@28
+tb.SD.error
+@1000200
+-STATE
+@28
+tb.SD.busy
+@22
 tb.SD.slow_tick[7:0]
-tb.SD.t[7:0]
+tb.SD.timeout_k[11:0]
+tb.SD.timeout_cnt[24:0]
+tb.SD.data_r[7:0]
+tb.SD.data_w[7:0]
+tb.SD.status[7:0]
+@800200
+-MK
+@22
+tb.mk_state[7:0]
+tb.mk_recv[7:0]
+tb.mk_data_w[7:0]
+@28
+tb.mk_bit[2:0]
+@22
+tb.mk_command[5:0]
+tb.mk_arg[31:0]
+@1000200
+-MK
 [pattern_trace] 1
 [pattern_trace] 0
