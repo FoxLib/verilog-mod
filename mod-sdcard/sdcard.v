@@ -27,6 +27,19 @@ module SDCARD(
 
 // ОБЪЯВЛЕНИЯ
 // ---------------------------------------------------------------------
+// errorno:
+// 1 - Таймаут ответа от SD Command (PRE)
+// 2 - Таймаут ответа от SD Command (POST)
+// 3 - SD INIT не ответил IDLE=01h
+// 4 - Тип карты неизвестен
+// ---------------------------------------------------------------------
+
+localparam
+
+    INIT    = 1,
+    GETPUT  = 2,
+    COMMAND = 4,
+    IDLE    = 5;
 
 // Когда наступает неактивный период
 `define SPI_TIMEOUT_CNT     2500000
@@ -45,7 +58,9 @@ reg  [3:0]  ts = 0;
 reg  [2:0]  k  = 0;     // PUT|GET
 reg  [2:0]  m  = 0;     // SDCommand
 reg  [2:0]  i  = 0;
-reg  [2:0]  m1 = 0;
+reg  [3:0]  m1 = 0;
+reg  [1:0]  m2 = 0;
+reg  [1:0]  sd_type = 0;
 
 reg  [7:0]  data_w      = 8'h5A; // Данные на запись
 reg  [7:0]  data_r      = 8'h00; // Прочитанные данные
@@ -58,7 +73,7 @@ reg  [3:0]  fn  = 0;    // Возврат из t=2 (PUT|GET)
 reg  [3:0]  fn2 = 0;    // Возврат из t=4 (SD-Command)
 
 // Процедура SD_Command (cmd, arg)
-reg [ 7:0]  sd_cmd = 6'h00;
+reg [ 5:0]  sd_cmd = 6'h00;
 reg [31:0]  sd_arg = 32'h00000000;
 reg [ 7:0]  status = 8'hFF; // Ответ от SD-Command
 
@@ -74,22 +89,55 @@ always @(posedge clock) begin
         0: case (m1)
 
             // Подача 80 тактов
-            0: begin m1 <= 1; m <= 0; fn <= 0; fn2 <= 0; ts <= 1; end
+            0: begin m1 <= 1; fn <= 0; fn2 <= 0; m <= 0; ts <= INIT; sd_type <= 0; busy <= 1; end
 
             // Запрос команды IDLE
-            1: begin m1 <= 2; ts <= 4; sd_cmd <= 0; sd_arg <= 0; end
+            1: begin m1 <= 2; ts <= COMMAND; sd_cmd <= 0; sd_arg <= 0; end
 
             // Проверка на status=01, должен быть 01h
             2: begin
 
-                if (status == 8'h01) m1 <= 3;
+                if (status == 8'h01) m1 <= 3; /* ВАЛИДНО */
                 else begin error <= 1; errorno <= 3; ts <= 5; end
 
             end
 
+            // CMD8: Проверка наличия поддержки SD2
+            3: begin m1 <= 4; ts <= COMMAND; sd_cmd <= 8; sd_arg <= 32'h01AA; end
+
+            // Тест типа карты
+            4: begin
+
+                m1 <= 5; // ПЕреход к получению 4х байтов
+                m2 <= 0; // Сбросить счетчик
+
+                // Если в бите 2 есть 1, то это устаревшая карта SD1
+                if (status[2]) begin sd_type <= 1; m1 <= 7; end
+
+            end
+
+            // Получение 4 байт (если это SD2)
+            5: begin m1 <= 6; fn <= 0; ts <= GETPUT; data_w <= 8'hFF; end
+            6: begin m1 <= 5; m2 <= m2 + 1;
+
+                // Сканируем 4-й байт
+                if (m2 == 3) begin
+
+                    // Проверка наличия байта AAh
+                    if (data_r == 8'hAA)
+                         begin m1 <= 7; sd_type <= 2; end
+                    else begin ts <= 5; errorno <= 4; error <= 1; spi_cs <= 1; end
+
+                end
+
+            end
+
+            // Инициализация карты и отправка кода поддержки SDHC если SD2
+            7: begin errorno <= data_r; end
+
         endcase
 
-        // Инициализация устройства
+        // Инициализация устройства [INIT]
         1: begin
 
             busy     <= 1;
@@ -99,9 +147,9 @@ always @(posedge clock) begin
             // 125 тиков x 2 = 250; 25.000.000 / 250 = 100 kHz
             if (slow_tick == 125-1) begin
 
-                spi_sclk    <= ~spi_sclk;
-                counter     <= counter + 1;
-                slow_tick   <= 0;
+                spi_sclk  <= ~spi_sclk;
+                counter   <= counter + 1;
+                slow_tick <= 0;
 
                 // 80 ticks: отключить отсылку сигналов
                 if (counter == (2*80 - 1)) begin {spi_sclk, timeout_cnt} <= 0; ts <= fn; end
@@ -112,13 +160,12 @@ always @(posedge clock) begin
 
         end
 
-        // Чтение или запись SPI
+        // Чтение или запись SPI [GETPUT]
         2: begin
 
-            ts <= 3;
-            k  <= 0;
+            ts      <= 3;
+            k       <= 0;
             spi_cs  <= 0;   // Перевод устройства в активный режим
-            busy    <= 1;   // Устройство сейчас занято
             counter <= 0;   // Сброс счетчика
 
         end
@@ -143,22 +190,20 @@ always @(posedge clock) begin
 
         endcase
 
-        // SD Command
+        // SD Command [COMMAND]
         4: case (m)
 
             // Сброс параметров
-            0: begin m <= 1; timeout_k <= 4095; fn <= 4; busy <= 1; end
+            0: begin m <= 1; timeout_k <= 4095; fn <= 4; end
 
             // Прочитать следующий байт
-            1: begin m <= 2; ts <= 2; data_w <= 8'hFF; end
+            1: begin m <= 2; ts <= GETPUT; data_w <= 8'hFF; end
 
             // Проверить, что принят байт FFh
-            2: begin
+            2: begin m <= (data_r == 8'hFF) ? 3 : 1;
 
                 i <= 0;
-                m <= (data_r == 8'hFF) ? 3 : 1;
-
-                if (timeout_k == 0) begin error <= 1; errorno <= 1; ts <= 5; end
+                if (timeout_k == 0) begin error <= 1; errorno <= 1; ts <= IDLE; spi_cs <= 1; end
                 timeout_k <= timeout_k - 1;
 
              end
@@ -167,13 +212,13 @@ always @(posedge clock) begin
             3: begin
 
                 timeout_k <= 255;
-                m  <= i == 5 ? 4 : 3;
-                ts <= 2;
+                m  <= (i == 5) ? 4 : 3;
+                ts <= GETPUT;
 
                 case (i)
 
                     // Команда PUT(sd_cmd | 0x40)
-                    0: data_w <= {sd_cmd[7], 1'b1, sd_cmd[5:0]};
+                    0: data_w <= {2'b01, sd_cmd[5:0]};
 
                     // Аргумент
                     1: data_w <= sd_arg[31:24];
@@ -183,8 +228,8 @@ always @(posedge clock) begin
 
                     // CRC
                     5: data_w <=
-                    sd_cmd[5:0] == 0 ? 8'h95 :          // CMD0
-                    sd_cmd[5:0] == 8 ? 8'h87 : 8'hFF;   // CMD8, Other
+                        sd_cmd[5:0] == 0 ? 8'h95 :          // CMD0
+                        sd_cmd[5:0] == 8 ? 8'h87 : 8'hFF;   // CMD8, Other
 
                 endcase
 
@@ -193,18 +238,20 @@ always @(posedge clock) begin
             end
 
             // Ожидание ответа BSY=0
-            4: begin m <= 5; ts <= 2; data_w <= 8'hFF; end // GET
+            4: begin m <= 5; ts <= GETPUT; data_w <= 8'hFF; end // GET
             5: begin m <= 4;
-
-                // BSY=0 -> Перейти к 6
-                if (data_r != 8'hFF) ts <= fn2;
-
-                // Произошла ошибка получения статуса, выход к IDLE
-                if (timeout_k == 0) begin error <= 1; errorno <= 2; ts <= 5; end
-                timeout_k <= timeout_k - 1;
 
                 // Ответ команды
                 status <= data_r;
+
+                // BSY=0 -> Данные готовы
+                if (data_r[7] == 0) begin ts <= fn2; m <= 0; end
+
+                // Произошла ошибка получения статуса, выход к IDLE
+                if (timeout_k == 0) begin error <= 1; errorno <= 2; ts <= IDLE; spi_cs <= 1; end
+
+                // Уменьшается счетчик
+                timeout_k <= timeout_k - 1;
 
             end
 
