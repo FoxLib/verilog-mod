@@ -1,0 +1,44 @@
+[*]
+[*] GTKWave Analyzer v3.3.86 (w)1999-2017 BSI
+[*] Tue Dec 29 07:25:37 2020
+[*]
+[dumpfile] "/disk/fox/dev/mods/mod-sdcard/tb.vcd"
+[dumpfile_mtime] "Tue Dec 29 07:24:54 2020"
+[dumpfile_size] 68618
+[savefile] "/disk/fox/dev/mods/mod-sdcard/tb.gtkw"
+[timestart] 0
+[size] 1920 1029
+[pos] -1 -1
+*-6.000000 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+[treeopen] tb.
+[sst_width] 248
+[signals_width] 172
+[sst_expanded] 1
+[sst_vpaned_height] 300
+@28
+tb.clock
+tb.clock_50
+@800200
+-PHY
+@28
+[color] 2
+tb.SD.spi_cs
+[color] 2
+tb.SD.spi_miso
+[color] 2
+tb.SD.spi_mosi
+[color] 2
+tb.SD.spi_sclk
+@1000200
+-PHY
+@29
+tb.SD.busy
+@28
+tb.SD.clock
+tb.SD.command
+@22
+tb.SD.counter[7:0]
+tb.SD.slow_tick[7:0]
+tb.SD.t[7:0]
+[pattern_trace] 1
+[pattern_trace] 0

@@ -20,6 +20,7 @@ wire mosi;
 
 sdcard SD(
 
+    .clock      (clock),
     .spi_cs     (cs),
     .spi_sclk   (sclk),
     .spi_miso   (miso),
