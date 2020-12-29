@@ -18,7 +18,7 @@ wire sclk;
 reg  miso = 1;
 wire mosi;
 
-sdcard #(.SKIPINIT(1)) SD(
+SDCARD SD(
 
     .clock      (clock),
     .spi_cs     (cs),

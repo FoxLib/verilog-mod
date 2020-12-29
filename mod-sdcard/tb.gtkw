@@ -1,15 +1,15 @@
 [*]
 [*] GTKWave Analyzer v3.3.86 (w)1999-2017 BSI
-[*] Tue Dec 29 15:42:02 2020
+[*] Tue Dec 29 16:53:25 2020
 [*]
 [dumpfile] "/disk/fox/dev/mods/mod-sdcard/tb.vcd"
-[dumpfile_mtime] "Tue Dec 29 15:41:33 2020"
-[dumpfile_size] 54452
+[dumpfile_mtime] "Tue Dec 29 16:53:04 2020"
+[dumpfile_size] 49362
 [savefile] "/disk/fox/dev/mods/mod-sdcard/tb.gtkw"
-[timestart] 2605
+[timestart] 0
 [size] 1920 1029
 [pos] -1 -1
-*-6.000000 2825 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+*-9.000000 70 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
 [treeopen] tb.
 [sst_width] 248
 [signals_width] 242
@@ -33,22 +33,16 @@ tb.SD.spi_sclk
 -PHY
 @800200
 -STATE
-@28
+@22
 [color] 5
-tb.SD.n[2:0]
-@23
+tb.SD.t[3:0]
 [color] 5
 tb.SD.fn[3:0]
-@22
 [color] 5
 tb.SD.fn2[3:0]
 @28
 [color] 5
 tb.SD.k[2:0]
-@22
-[color] 5
-tb.SD.t[3:0]
-@28
 [color] 5
 tb.SD.m[2:0]
 [color] 5
@@ -58,6 +52,9 @@ tb.SD.i[2:0]
 tb.SD.counter[7:0]
 @28
 tb.SD.error
+@23
+[color] 6
+tb.SD.errorno[7:0]
 @1000200
 -STATE
 @28

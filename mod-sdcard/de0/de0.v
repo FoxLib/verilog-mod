@@ -75,6 +75,12 @@ assign HEX3 = 7'b1111111;
 assign HEX4 = 7'b1111111;
 assign HEX5 = 7'b1111111;
 
+// LED
+assign LEDR[7:0] = pwm_led < 1024 ? errorno : 0;
+
+// MISO: Input Port
+assign SD_DATA[0] = 1'bZ;
+
 // ---------------------------------------------------------------------
 wire clock_25;  wire clock_50;  wire clock_75;
 wire clock_100; wire clock_106;
@@ -82,35 +88,34 @@ wire clock_100; wire clock_106;
 de0pll u0(
 
     // Источник тактирования
-    .clkin (CLOCK_50),
+    .clkin  (CLOCK_50),
 
     // Производные частоты
-    .m25   (clock_25),
-    .m50   (clock_50),
-    .m75   (clock_75),
-    .m100  (clock_100),
-    .m106  (clock_106),
+    .m25    (clock_25),
+    .m50    (clock_50),
+    .m75    (clock_75),
+    .m100   (clock_100),
+    .m106   (clock_106),
+    .locked (locked)
 );
 
-// -----------------------------------------------------------------------
-wire [7:0] errorno;
-reg [15:0] pwm_led;
-wire       pwm_en = 1024 < pwm_duty;
-assign LEDR[7:0] = pwm_en ? errorno : 0;
-always @(posedge clock_50) pwm_led <= pwm_led + 1;
-// -----------------------------------------------------------------------
+// ---------------------------------------------------------------------
+reg [15:0] pwm_led; always @(posedge clock_25) pwm_led <= pwm_led + 1;
+// ---------------------------------------------------------------------
 
-sdcard u1(
+wire [7:0] errorno;
+
+SDCARD u1(
 
     .clock      (clock_25 & locked),
-    .spi_miso   (SD_DATA[0]),       // Входящие данные
-    .spi_mosi   (SD_CMD),           // Исходящие
-    .spi_sclk   (SD_CLK),           // Тактовая частота
-    .spi_cs     (SD_DATA[3]),       // Выбор чипа
+    .spi_miso   (SD_DATA[0]),           // Входящие данные
+    .spi_mosi   (SD_CMD),               // Исходящие
+    .spi_sclk   (SD_CLK),               // Тактовая частота
+    .spi_cs     (SD_DATA[3]),           // Выбор чипа
 
     // Отладка
     .errorno    (errorno)
-)
+);
 
 endmodule
 

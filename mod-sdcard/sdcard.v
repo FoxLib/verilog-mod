@@ -7,22 +7,22 @@
 .spi_cs     (SD_DATA[3]),       // Выбор чипа
 */
 
-module sdcard #(parameter SKIPINIT = 0) (
+module SDCARD(
 
     // 25 Mhz
-    input  wire      clock,
+    input  wire       clock,
 
     // SPI Физический интерфейс
-    output reg       spi_cs,
-    output reg       spi_sclk,
-    input  wire      spi_miso,
-    output reg       spi_mosi,
+    output reg        spi_cs,
+    output reg        spi_sclk,
+    input  wire       spi_miso,
+    output reg        spi_mosi,
 
     // Интерфейс взаимодействия
-    output reg       busy,
-    output wire      timeout,
-    output reg       error,
-    output reg [7:0] errorno
+    output reg        busy,
+    output wire       timeout,
+    output reg        error,
+    output reg  [7:0] errorno
 );
 
 // ОБЪЯВЛЕНИЯ
@@ -32,7 +32,7 @@ module sdcard #(parameter SKIPINIT = 0) (
 `define SPI_TIMEOUT_CNT     2500000
 
 // При запуске устройства оно занято инициализацией
-initial begin busy = 1; spi_cs = 1; spi_mosi = 1; spi_sclk = 0; error = 0; errorno = 0; end
+initial begin busy = 1; spi_cs = 1; spi_mosi = 1; spi_sclk = 0; error = 0; errorno = 8'h80; ts = 0; end
 
 // При timeout = 0, МК карты все еще активен, потом уходит в сон
 assign timeout = (timeout_cnt == `SPI_TIMEOUT_CNT);
@@ -41,11 +41,11 @@ assign timeout = (timeout_cnt == `SPI_TIMEOUT_CNT);
 // ---------------------------------------------------------------------
 
 // Состояние контроллера (=0 IDLE, =1 Инициализация, =4 SDCommand, =5 INIT)
-reg  [3:0]  t  = 5;
+reg  [3:0]  ts = 0;
 reg  [2:0]  k  = 0;     // PUT|GET
 reg  [2:0]  m  = 0;     // SDCommand
 reg  [2:0]  i  = 0;
-reg  [2:0]  n  = 0;
+reg  [2:0]  m1 = 0;
 
 reg  [7:0]  data_w      = 8'h5A; // Данные на запись
 reg  [7:0]  data_r      = 8'h00; // Прочитанные данные
@@ -68,22 +68,26 @@ reg [ 7:0]  status = 8'hFF; // Ответ от SD-Command
 
 always @(posedge clock) begin
 
-    case (t)
+    case (ts)
 
-        // IDLE
-        0: begin
+        // SD INIT
+        0: case (m1)
 
-            k <= 0;
-            m <= 0;
-            n <= 0;
-            busy <= 0;
+            // Подача 80 тактов
+            0: begin m1 <= 1; m <= 0; fn <= 0; fn2 <= 0; ts <= 1; end
 
-            // Отсчет таймаута
-            if (timeout_cnt < `SPI_TIMEOUT_CNT) timeout_cnt <= timeout_cnt + 1;
+            // Запрос команды IDLE
+            1: begin m1 <= 2; ts <= 4; sd_cmd <= 0; sd_arg <= 0; end
 
-            // При обнаружений команды --> error <= 0
+            // Проверка на status=01, должен быть 01h
+            2: begin
 
-        end
+                if (status == 8'h01) m1 <= 3;
+                else begin error <= 1; errorno <= 3; ts <= 5; end
+
+            end
+
+        endcase
 
         // Инициализация устройства
         1: begin
@@ -100,7 +104,7 @@ always @(posedge clock) begin
                 slow_tick   <= 0;
 
                 // 80 ticks: отключить отсылку сигналов
-                if (counter == (2*80 - 1)) begin {spi_sclk, timeout_cnt} <= 0; t <= fn; end
+                if (counter == (2*80 - 1)) begin {spi_sclk, timeout_cnt} <= 0; ts <= fn; end
 
             end
             // Оттикивание таймера
@@ -111,8 +115,8 @@ always @(posedge clock) begin
         // Чтение или запись SPI
         2: begin
 
-            t <= 3;
-            k <= 0;
+            ts <= 3;
+            k  <= 0;
             spi_cs  <= 0;   // Перевод устройства в активный режим
             busy    <= 1;   // Устройство сейчас занято
             counter <= 0;   // Сброс счетчика
@@ -135,7 +139,7 @@ always @(posedge clock) begin
             end
 
             // Вернуться к процедуре fn, CLK=0, DAT=0
-            4: begin spi_sclk <= 0; spi_mosi <= 0; t <= fn; end
+            4: begin spi_sclk <= 0; spi_mosi <= 0; ts <= fn; end
 
         endcase
 
@@ -146,7 +150,7 @@ always @(posedge clock) begin
             0: begin m <= 1; timeout_k <= 4095; fn <= 4; busy <= 1; end
 
             // Прочитать следующий байт
-            1: begin m <= 2; t <= 2; data_w <= 8'hFF; end
+            1: begin m <= 2; ts <= 2; data_w <= 8'hFF; end
 
             // Проверить, что принят байт FFh
             2: begin
@@ -154,7 +158,7 @@ always @(posedge clock) begin
                 i <= 0;
                 m <= (data_r == 8'hFF) ? 3 : 1;
 
-                if (timeout_k == 0) begin error <= 1; t <= 0; end
+                if (timeout_k == 0) begin error <= 1; errorno <= 1; ts <= 5; end
                 timeout_k <= timeout_k - 1;
 
              end
@@ -163,8 +167,8 @@ always @(posedge clock) begin
             3: begin
 
                 timeout_k <= 255;
-                m <= i == 5 ? 4 : 3;
-                t <= 2;
+                m  <= i == 5 ? 4 : 3;
+                ts <= 2;
 
                 case (i)
 
@@ -179,8 +183,8 @@ always @(posedge clock) begin
 
                     // CRC
                     5: data_w <=
-                    /* SD_CMD0 */ sd_cmd[5:0] == 0 ? 8'h95 :
-                    /* SD_CMD8 */ sd_cmd[5:0] == 8 ? 8'h87 : 8'hFF;
+                    sd_cmd[5:0] == 0 ? 8'h95 :          // CMD0
+                    sd_cmd[5:0] == 8 ? 8'h87 : 8'hFF;   // CMD8, Other
 
                 endcase
 
@@ -189,14 +193,14 @@ always @(posedge clock) begin
             end
 
             // Ожидание ответа BSY=0
-            4: begin m <= 5; t <= 2; data_w <= 8'hFF; end // GET
-            5: begin
+            4: begin m <= 5; ts <= 2; data_w <= 8'hFF; end // GET
+            5: begin m <= 4;
 
                 // BSY=0 -> Перейти к 6
-                if (data_r == 8'hFF) m <= 4; else t <= fn2;
+                if (data_r != 8'hFF) ts <= fn2;
 
                 // Произошла ошибка получения статуса, выход к IDLE
-                if (timeout_k == 0) begin error <= 1; t <= 0; end
+                if (timeout_k == 0) begin error <= 1; errorno <= 2; ts <= 5; end
                 timeout_k <= timeout_k - 1;
 
                 // Ответ команды
@@ -206,19 +210,20 @@ always @(posedge clock) begin
 
         endcase
 
-        // SD INIT
-        5: case (n)
+        // IDLE
+        5: begin
 
-            // Подача 80 тактов
-            0: begin n <= 1; fn <= 5; fn2 <= 5; if (SKIPINIT == 0) t <= 1; end
+            k   <= 0;
+            m   <= 0;
+            m1  <= 0;
+            busy <= 0;
 
-            // Запрос команды IDLE
-            1: begin n <= 2; t <= 4; sd_cmd <= 6'h00; sd_arg <= 0; end
+            // Отсчет таймаута
+            if (timeout_cnt < `SPI_TIMEOUT_CNT) timeout_cnt <= timeout_cnt + 1;
 
-            // Проверка на status=01, должен быть 01h
-            2: begin errorno <= status; if (status == 8'h01) n <= 3; else begin error <= 1; t <= 0; end end
+            // При обнаружений команды READ | WRITE --> error <= 0, errorno <= 0
 
-        endcase
+        end
 
     endcase
 
