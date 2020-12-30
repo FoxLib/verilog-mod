@@ -30,16 +30,20 @@ module SDCARD(
 // errorno:
 // 1 - Таймаут ответа от SD Command (PRE)
 // 2 - Таймаут ответа от SD Command (POST)
-// 3 - SD INIT не ответил IDLE=01h
+// 3 - SDInit не ответил IDLE=01h
 // 4 - Тип карты неизвестен
+// 5 - SDInit ACMD не ответил 00h
+// 6 - SDInit CMD58 не вернул 00h
 // ---------------------------------------------------------------------
 
 localparam
 
+    SDINIT  = 0,
     INIT    = 1,
     GETPUT  = 2,
     COMMAND = 4,
-    IDLE    = 5;
+    IDLE    = 5,
+    ERROR   = 6;
 
 // Когда наступает неактивный период
 `define SPI_TIMEOUT_CNT     2500000
@@ -60,13 +64,14 @@ reg  [2:0]  m  = 0;     // SDCommand
 reg  [2:0]  i  = 0;
 reg  [3:0]  m1 = 0;
 reg  [1:0]  m2 = 0;
-reg  [1:0]  sd_type = 0;
+reg  [1:0]  sd_type = 0;  // 1-SD1, 2-SD2, 3-SDHC
 
 reg  [7:0]  data_w      = 8'h5A; // Данные на запись
 reg  [7:0]  data_r      = 8'h00; // Прочитанные данные
 reg  [7:0]  slow_tick   = 0;
 reg  [7:0]  counter     = 0;
 reg  [11:0] timeout_k   = 0;
+reg  [11:0] timeout_n   = 0;
 reg  [24:0] timeout_cnt = `SPI_TIMEOUT_CNT;
 
 reg  [3:0]  fn  = 0;    // Возврат из t=2 (PUT|GET)
@@ -86,10 +91,10 @@ always @(posedge clock) begin
     case (ts)
 
         // SD INIT
-        0: case (m1)
+        SDINIT: case (m1)
 
             // Подача 80 тактов
-            0: begin m1 <= 1; fn <= 0; fn2 <= 0; m <= 0; ts <= INIT; sd_type <= 0; busy <= 1; end
+            0: begin m1 <= 1; fn <= SDINIT; fn2 <= SDINIT; m <= 0; ts <= INIT; sd_type <= 0; busy <= 1; end
 
             // Запрос команды IDLE
             1: begin m1 <= 2; ts <= COMMAND; sd_cmd <= 0; sd_arg <= 0; end
@@ -106,10 +111,7 @@ always @(posedge clock) begin
             3: begin m1 <= 4; ts <= COMMAND; sd_cmd <= 8; sd_arg <= 32'h01AA; end
 
             // Тест типа карты
-            4: begin
-
-                m1 <= 5; // ПЕреход к получению 4х байтов
-                m2 <= 0; // Сбросить счетчик
+            4: begin m1 <= 5; m2 <= 0; timeout_n <= 4095;
 
                 // Если в бите 2 есть 1, то это устаревшая карта SD1
                 if (status[2]) begin sd_type <= 1; m1 <= 7; end
@@ -117,7 +119,7 @@ always @(posedge clock) begin
             end
 
             // Получение 4 байт (если это SD2)
-            5: begin m1 <= 6; fn <= 0; ts <= GETPUT; data_w <= 8'hFF; end
+            5: begin m1 <= 6; fn <= SDINIT; ts <= GETPUT; data_w <= 8'hFF; end
             6: begin m1 <= 5; m2 <= m2 + 1;
 
                 // Сканируем 4-й байт
@@ -126,19 +128,56 @@ always @(posedge clock) begin
                     // Проверка наличия байта AAh
                     if (data_r == 8'hAA)
                          begin m1 <= 7; sd_type <= 2; end
-                    else begin ts <= 5; errorno <= 4; error <= 1; spi_cs <= 1; end
+                    else begin ts <= ERROR; errorno <= 4; end
 
                 end
 
             end
 
+            // ACMD(0x29, 0x40000000 : 0)
             // Инициализация карты и отправка кода поддержки SDHC если SD2
-            7: begin errorno <= data_r; end
+            7: begin m1 <= 8; ts <= COMMAND; sd_cmd <= 8'h37; sd_arg <= 0; end
+            8: begin m1 <= 9; ts <= COMMAND; sd_cmd <= 8'h29; sd_arg <= (sd_type == 2 ? 32'h40000000 : 0); end
+            9: begin m1 <= 7; // status=00h - READY
+
+                // Если карта SD2, отослать SD_CMD58 и проверить на 00h
+                if (status == 8'h00) begin
+
+                    // Прочесть OCR
+                    if (sd_type == 2) m1 <= 10;
+                    // Для SD1 не нужно читать OCR
+                    else begin ts <= IDLE; spi_cs <= 1; end
+
+                end
+
+                // Истечение таймаута
+                if (timeout_n == 0) begin ts <= ERROR; errorno <= 5; end
+
+                // Делать запросы пока не истечет таймер
+                timeout_n <= timeout_n - 1;
+
+            end
+
+            // CMD58(0) должен вернуть 0
+            10: begin m1 <= 11; m2 <= 0; ts <= COMMAND; sd_cmd <= 8'h3A; sd_arg <= 0; end
+            11: begin if (status == 8'h00) m1 <= 12; else begin ts <= ERROR; errorno <= 6; end end
+
+            // Прочитать ответ от карты (4 байта)
+            12: begin m1 <= 13; fn <= SDINIT; ts <= GETPUT; data_w <= 8'hFF; end
+            13: begin m1 <= 12; m2 <= m2 + 1;
+
+                // Если первый байт ответа имеет ответ 11xxxxxx - это SDHC
+                if (m2 == 0 && data_r[7:6] == 2'b11) begin sd_type <= 3; end
+
+                // Был прочтен последний байт из OCR
+                if (m2 == 3) begin ts <= IDLE; spi_cs <= 1; end
+
+            end
 
         endcase
 
         // Инициализация устройства [INIT]
-        1: begin
+        INIT: begin
 
             busy     <= 1;
             spi_cs   <= 1;
@@ -161,7 +200,7 @@ always @(posedge clock) begin
         end
 
         // Чтение или запись SPI [GETPUT]
-        2: begin
+        GETPUT: begin
 
             ts      <= 3;
             k       <= 0;
@@ -170,7 +209,7 @@ always @(posedge clock) begin
 
         end
 
-        3: case (k)
+        GETPUT+1: case (k)
 
             // CLK=0
             0: begin k <= 1; spi_sclk <= 0; end
@@ -191,7 +230,7 @@ always @(posedge clock) begin
         endcase
 
         // SD Command [COMMAND]
-        4: case (m)
+        COMMAND: case (m)
 
             // Сброс параметров
             0: begin m <= 1; timeout_k <= 4095; fn <= 4; end
@@ -258,7 +297,7 @@ always @(posedge clock) begin
         endcase
 
         // IDLE
-        5: begin
+        IDLE: begin
 
             k   <= 0;
             m   <= 0;
@@ -271,6 +310,9 @@ always @(posedge clock) begin
             // При обнаружений команды READ | WRITE --> error <= 0, errorno <= 0
 
         end
+
+        // Получена ошибка
+        ERROR: begin ts <= IDLE; error <= 1; spi_cs <= 1; end
 
     endcase
 
