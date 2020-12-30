@@ -75,8 +75,9 @@ reg  [11:0] timeout_k   = 0;
 reg  [11:0] timeout_n   = 0;
 reg  [24:0] timeout_cnt = `SPI_TIMEOUT_CNT;
 
-reg  [3:0]  fn  = 0;    // Возврат из t=2 (PUT|GET)
-reg  [3:0]  fn2 = 0;    // Возврат из t=4 (SD-Command)
+reg  [3:0]  fn  = 0;    // Возврат из t=PUTGET
+reg  [3:0]  fn2 = 0;    // Возврат из t=COMMAND
+reg  [3:0]  fn3 = 0;    // Возврат из t=SDINIT
 
 // Процедура SD_Command (cmd, arg)
 reg [ 5:0]  sd_cmd = 6'h00;
@@ -94,10 +95,11 @@ always @(posedge clock) begin
         // IDLE
         IDLE: begin
 
-            k   <= 0;
-            m   <= 0;
-            m1  <= 0;
+            k    <= 0;
+            m    <= 0;
+            m1   <= 0;
             busy <= 0;
+            fn3  <= IDLE;
 
             // Первый запуск: выполнить инициализацию
             if (device_start == 0) begin
@@ -182,7 +184,7 @@ always @(posedge clock) begin
                     // Прочесть OCR
                     if (sd_type == 2) m1 <= 10;
                     // Для SD1 не нужно читать OCR
-                    else begin ts <= IDLE; spi_cs <= 1; end
+                    else begin ts <= fn3; spi_cs <= 1; end
 
                 end
 
@@ -206,7 +208,7 @@ always @(posedge clock) begin
                 if (m2 == 0 && data_r[7:6] == 2'b11) begin sd_type <= 3; end
 
                 // Был прочтен последний байт из OCR
-                if (m2 == 3) begin ts <= IDLE; spi_cs <= 1; end
+                if (m2 == 3) begin ts <= fn3; spi_cs <= 1; end
 
             end
 
