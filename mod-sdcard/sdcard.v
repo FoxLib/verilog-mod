@@ -38,11 +38,11 @@ module SDCARD(
 
 localparam
 
-    SDINIT  = 0,
+    IDLE    = 0,
     INIT    = 1,
     GETPUT  = 2,
     COMMAND = 4,
-    IDLE    = 5,
+    SDINIT  = 5,
     ERROR   = 6;
 
 // Когда наступает неактивный период
@@ -64,7 +64,8 @@ reg  [2:0]  m  = 0;     // SDCommand
 reg  [2:0]  i  = 0;
 reg  [3:0]  m1 = 0;
 reg  [1:0]  m2 = 0;
-reg  [1:0]  sd_type = 0;  // 1-SD1, 2-SD2, 3-SDHC
+reg  [1:0]  sd_type = 0;        // 1-SD1, 2-SD2, 3-SDHC
+reg         device_start = 0;   // Первый запуск устройства
 
 reg  [7:0]  data_w      = 8'h5A; // Данные на запись
 reg  [7:0]  data_r      = 8'h00; // Прочитанные данные
@@ -90,11 +91,46 @@ always @(posedge clock) begin
 
     case (ts)
 
+        // IDLE
+        IDLE: begin
+
+            k   <= 0;
+            m   <= 0;
+            m1  <= 0;
+            busy <= 0;
+
+            // Первый запуск: выполнить инициализацию
+            if (device_start == 0) begin
+                device_start <= 1;
+                ts <= SDINIT;
+            end
+            else begin
+
+                // Отсчет таймаута
+                if (timeout_cnt < `SPI_TIMEOUT_CNT) timeout_cnt <= timeout_cnt + 1;
+
+                // При обнаружений команды READ | WRITE --> error <= 0, errorno <= 0
+
+            end
+
+        end
+
         // SD INIT
         SDINIT: case (m1)
 
             // Подача 80 тактов
-            0: begin m1 <= 1; fn <= SDINIT; fn2 <= SDINIT; m <= 0; ts <= INIT; sd_type <= 0; busy <= 1; end
+            0: begin m1 <= 1;
+
+                m    <= 0;
+                ts   <= INIT;
+                fn   <= SDINIT;
+                fn2  <= SDINIT;
+                busy <= 1;
+
+                sd_type     <= 0;
+                timeout_cnt <= 0;
+
+            end
 
             // Запрос команды IDLE
             1: begin m1 <= 2; ts <= COMMAND; sd_cmd <= 0; sd_arg <= 0; end
@@ -103,7 +139,7 @@ always @(posedge clock) begin
             2: begin
 
                 if (status == 8'h01) m1 <= 3; /* ВАЛИДНО */
-                else begin error <= 1; errorno <= 3; ts <= 5; end
+                else begin errorno <= 3; ts <= ERROR; end
 
             end
 
@@ -202,7 +238,7 @@ always @(posedge clock) begin
         // Чтение или запись SPI [GETPUT]
         GETPUT: begin
 
-            ts      <= 3;
+            ts      <= GETPUT+1;
             k       <= 0;
             spi_cs  <= 0;   // Перевод устройства в активный режим
             counter <= 0;   // Сброс счетчика
@@ -233,7 +269,7 @@ always @(posedge clock) begin
         COMMAND: case (m)
 
             // Сброс параметров
-            0: begin m <= 1; timeout_k <= 4095; fn <= 4; end
+            0: begin m <= 1; timeout_k <= 4095; fn <= COMMAND; end
 
             // Прочитать следующий байт
             1: begin m <= 2; ts <= GETPUT; data_w <= 8'hFF; end
@@ -287,7 +323,7 @@ always @(posedge clock) begin
                 if (data_r[7] == 0) begin ts <= fn2; m <= 0; end
 
                 // Произошла ошибка получения статуса, выход к IDLE
-                if (timeout_k == 0) begin error <= 1; errorno <= 2; ts <= IDLE; spi_cs <= 1; end
+                if (timeout_k == 0) begin errorno <= 2; ts <= ERROR; end
 
                 // Уменьшается счетчик
                 timeout_k <= timeout_k - 1;
@@ -295,21 +331,6 @@ always @(posedge clock) begin
             end
 
         endcase
-
-        // IDLE
-        IDLE: begin
-
-            k   <= 0;
-            m   <= 0;
-            m1  <= 0;
-            busy <= 0;
-
-            // Отсчет таймаута
-            if (timeout_cnt < `SPI_TIMEOUT_CNT) timeout_cnt <= timeout_cnt + 1;
-
-            // При обнаружений команды READ | WRITE --> error <= 0, errorno <= 0
-
-        end
 
         // Получена ошибка
         ERROR: begin ts <= IDLE; error <= 1; spi_cs <= 1; end
