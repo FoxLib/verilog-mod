@@ -65,7 +65,6 @@ reg  [2:0]  i  = 0;
 reg  [3:0]  m1 = 0;
 reg  [1:0]  m2 = 0;
 reg  [1:0]  sd_type = 0;        // 1-SD1, 2-SD2, 3-SDHC
-reg         device_start = 0;   // Первый запуск устройства
 
 reg  [7:0]  data_w      = 8'h5A; // Данные на запись
 reg  [7:0]  data_r      = 8'h00; // Прочитанные данные
@@ -101,23 +100,17 @@ always @(posedge clock) begin
             busy <= 0;
             fn3  <= IDLE;
 
-            // Первый запуск: выполнить инициализацию
-            if (device_start == 0) begin
-                device_start <= 1;
-                ts <= SDINIT;
-            end
-            else begin
+            //    ts <= SDINIT;
 
-                // Отсчет таймаута
-                if (timeout_cnt < `SPI_TIMEOUT_CNT) timeout_cnt <= timeout_cnt + 1;
+            // Отсчет таймаута
+            if (timeout_cnt < `SPI_TIMEOUT_CNT) timeout_cnt <= timeout_cnt + 1;
 
-                // При обнаружений команды READ | WRITE --> error <= 0, errorno <= 0
-
-            end
+            // При обнаружений команды READ | WRITE --> error <= 0, errorno <= 0
 
         end
 
-        // SD INIT
+        // SD INIT: Инициализация, определение типа карты
+        // -------------------------------------------------------------
         SDINIT: case (m1)
 
             // Подача 80 тактов
@@ -214,7 +207,8 @@ always @(posedge clock) begin
 
         endcase
 
-        // Инициализация устройства [INIT]
+        // Запуск устройства в режим работы SPI
+        // -------------------------------------------------------------
         INIT: begin
 
             busy     <= 1;
@@ -238,6 +232,7 @@ always @(posedge clock) begin
         end
 
         // Чтение или запись SPI [GETPUT]
+        // -------------------------------------------------------------
         GETPUT: begin
 
             ts      <= GETPUT+1;
@@ -268,10 +263,11 @@ always @(posedge clock) begin
         endcase
 
         // SD Command [COMMAND]
+        // -------------------------------------------------------------
         COMMAND: case (m)
 
             // Сброс параметров
-            0: begin m <= 1; timeout_k <= 4095; fn <= COMMAND; end
+            0: begin m <= 1; fn <= COMMAND; timeout_k <= 4095; end
 
             // Прочитать следующий байт
             1: begin m <= 2; ts <= GETPUT; data_w <= 8'hFF; end
@@ -280,12 +276,12 @@ always @(posedge clock) begin
             2: begin m <= (data_r == 8'hFF) ? 3 : 1;
 
                 i <= 0;
-                if (timeout_k == 0) begin error <= 1; errorno <= 1; ts <= IDLE; spi_cs <= 1; end
+                if (timeout_k == 0) begin errorno <= 1; ts <= ERROR; end
                 timeout_k <= timeout_k - 1;
 
              end
 
-            // Отсылка команды
+            // Отсылка аргументов команды
             3: begin
 
                 timeout_k <= 255;
@@ -335,6 +331,7 @@ always @(posedge clock) begin
         endcase
 
         // Получена ошибка
+        // -------------------------------------------------------------
         ERROR: begin ts <= IDLE; error <= 1; spi_cs <= 1; end
 
     endcase
